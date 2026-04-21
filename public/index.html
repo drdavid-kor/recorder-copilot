@@ -514,9 +514,9 @@ function App() {
       setOpenrouterOk(!!data.openrouter);
     }).catch(() => {});
 
-    fetch('/api/workspace').then(r => r.text()).then(text => {
-      if (text) setContent(text);
-    }).catch(() => {});
+    // Load workspace from localStorage
+    const saved = localStorage.getItem('pr-workspace');
+    if (saved) setContent(saved);
 
     // Enumerate mic devices
     navigator.mediaDevices?.enumerateDevices().then(devices => {
@@ -531,18 +531,15 @@ function App() {
     }).catch(() => {});
   }, []);
 
-  // --- Auto-save to backend ---
+  // --- Auto-save to localStorage ---
   const handleContentChange = React.useCallback((val) => {
     setContent(val);
     contentRef.current = val;
     setSaving('saving');
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      fetch('/api/workspace', {
-        method: 'POST',
-        headers: {'Content-Type': 'text/plain'},
-        body: val,
-      }).then(() => setSaving('saved')).catch(() => setSaving('saved'));
+      localStorage.setItem('pr-workspace', val);
+      setSaving('saved');
     }, 700);
   }, []);
 
