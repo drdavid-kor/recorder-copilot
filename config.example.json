@@ -3,10 +3,10 @@
     "apiKey": "",
     "apiUrl": "https://openrouter.ai/api/v1"
   },
-  "sttModel": "openrouter/auto",
+  "sttModel": "xiaomi/mimo-v2-omni",
   "models": [
-    { "id": "openai/gpt-4o", "label": "GPT-4o" },
-    { "id": "anthropic/claude-3.5-sonnet", "label": "Claude 3.5 Sonnet" },
-    { "id": "google/gemini-2.0-flash", "label": "Gemini 2.0 Flash" }
+    { "id": "deepseek/deepseek-v3.2", "label": "DeepSeek V3.2" },
+    { "id": "minimax/minimax-m2.7", "label": "MiniMax M2.7" },
+    { "id": "x-ai/grok-4.1-fast", "label": "Grok 4.1 Fast" }
   ]
 }
