@@ -1,0 +1,12 @@
+{
+  "openrouter": {
+    "apiKey": "",
+    "apiUrl": "https://openrouter.ai/api/v1"
+  },
+  "sttModel": "openrouter/auto",
+  "models": [
+    { "id": "openai/gpt-4o", "label": "GPT-4o" },
+    { "id": "anthropic/claude-3.5-sonnet", "label": "Claude 3.5 Sonnet" },
+    { "id": "google/gemini-2.0-flash", "label": "Gemini 2.0 Flash" }
+  ]
+}

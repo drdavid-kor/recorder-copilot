@@ -6,13 +6,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Project Recorder** is a single-page speech-to-text (STT) workspace tool. Users upload audio files or record via microphone, transcribe using Volcano Engine ASR APIs, and process transcriptions with an LLM via OpenRouter.
 
-## Current State
+## Setup & Run
 
-This project is in the **design/pre-implementation phase**. It contains:
-- `docs/prd.md` — Product Requirements Document (the source of truth for all features and API contracts)
-- `docs/design/Project Recorder.html` — Self-contained React UI prototype (React 18 + Babel via CDN)
+```bash
+npm install
+cp config.example.json config.json   # Fill in API keys
+node server.js                        # http://localhost:3000
+```
 
-The prototype has a complete UI with all features stubbed but no real API integrations.
+## Project Structure
+
+- `server.js` — Express backend with all REST + WebSocket routes
+- `public/index.html` — Single-page React frontend (React 18 via CDN, no build step)
+- `lib/volcengine-file.js` — File ASR: submit + poll workflow
+- `lib/volcengine-stream.js` — Streaming ASR: binary WebSocket protocol relay
+- `lib/openrouter.js` — LLM chat proxy with SSE streaming
+- `config.json` — API keys and model list (gitignored)
+- `data/workspace.md` — Auto-saved workspace content (gitignored)
+- `docs/prd.md` — Product Requirements Document (source of truth)
 
 ## Architecture
 
