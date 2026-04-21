@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Project Recorder</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { background: #0d1117; color: #e6edf3; overflow: hidden; }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+  @keyframes blink {
+    0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+    40%            { opacity: 1;   transform: scale(1); }
+  }
+  @keyframes pulse-border {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.4); }
+    50%       { box-shadow: 0 0 0 5px rgba(248, 81, 73, 0); }
+  }
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; } to { opacity: 1; }
+  }
+
+  textarea::placeholder { color: #484f58; }
+  select option { background: #1c2128; }
+
+  .record-btn:hover  { border-color: #f85149 !important; color: #f85149 !important; }
+  .ghost-btn:hover   { border-color: #8b949e !important; color: #e6edf3 !important; }
+  .send-btn:hover:not(:disabled) { filter: brightness(1.12); }
+  .upload-zone:hover { border-color: #8b949e !important; background: rgba(255,255,255,0.03) !important; }
+  .chat-entry { animation: slide-in 0.2s ease; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+/* ── Design Tokens ─────────────────────────────────── */
+const T = {
+  bg:       '#0d1117',
+  surface:  '#161b22',
+  surface2: '#1c2128',
+  surface3: '#21262d',
+  border:   '#30363d',
+  text:     '#e6edf3',
+  muted:    '#8b949e',
+  dim:      '#484f58',
+  accent:   '#f85149',
+  green:    '#3fb950',
+  blue:     '#79c0ff',
+  yellow:   '#e3b341',
+  orange:   '#ffa657',
+  purple:   '#d2a8ff',
+  mono:     '"JetBrains Mono", "Fira Code", monospace',
+  sans:     '"Inter", system-ui, sans-serif',
+};
+
+/* ── Markdown Syntax Highlighter ───────────────────── */
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function inlineHL(s) {
+  return s
+    .replace(/\*\*\*(.+?)\*\*\*/g, `<b><em style="color:#fff">$1</em></b>`)
+    .replace(/\*\*(.+?)\*\*/g,     `<strong style="color:#fff;font-weight:600">$1</strong>`)
+    .replace(/\*([^\*\n]+?)\*/g,   `<em style="color:#cdd9e5">$1</em>`)
+    .replace(/\`([^\`\n]+?)\`/g,   `<span style="background:#1c2128;color:${T.green};padding:0 3px;border-radius:3px">$1</span>`);
+}
+function highlightMd(text) {
+  return text.split('\n').map(raw => {
+    const line = esc(raw);
+    /* h1-h6 */
+    const hm = raw.match(/^(#{1,6}) (.*)$/);
+    if (hm) {
+      const lvl = hm[1].length;
+      const cols = [T.blue,'#a5d6ff','#cae8ff',T.muted,T.muted,T.muted];
+      return `<span style="color:${T.dim}">${esc(hm[1])} </span><span style="color:${cols[lvl-1]};font-weight:600">${inlineHL(esc(hm[2]))}</span>`;
+    }
+    /* HR */
+    if (/^---+$/.test(raw.trim()))
+      return `<span style="color:${T.dim}">${line}</span>`;
+    /* blockquote */
+    if (raw.startsWith('> '))
+      return `<span style="color:${T.muted};border-left:2px solid ${T.dim};padding-left:6px">${inlineHL(line.slice(2))}</span>`;
+    /* list */
+    const lm = raw.match(/^(\s*)([-*+]|\d+\.) (.*)$/);
+    if (lm)
+      return `${esc(lm[1])}<span style="color:${T.dim}">${esc(lm[2])} </span><span style="color:${T.text}">${inlineHL(esc(lm[3]))}</span>`;
+    /* code fence */
+    if (raw.startsWith('```'))
+      return `<span style="color:${T.dim}">${line}</span>`;
+    /* empty */
+    if (!raw.trim()) return '';
+    return `<span style="color:${T.text}">${inlineHL(line)}</span>`;
+  }).join('\n');
+}
+
+/* ── Icons ─────────────────────────────────────────── */
+const Icon = ({ d, size=14, stroke=2, color='currentColor', fill='none' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={color} strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round">
+    <path d={d}/>
+  </svg>
+);
+const MicIcon    = ({size=14,color='currentColor'}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/>
+  </svg>
+);
+const UploadIcon = ({size=14}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+);
+const SendIcon   = ({size=12}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="currentColor" stroke="none"/>
+  </svg>
+);
+const StopIcon   = ({size=10}) => (
+  <svg width={size} height={size} viewBox="0 0 10 10"><rect width="10" height="10" rx="2" fill="currentColor"/></svg>
+);
+
+/* ── Waveform ───────────────────────────────────────── */
+function Waveform() {
+  const [h, setH] = React.useState([4,9,6,13,8,11,5,9,7,12,5]);
+  React.useEffect(() => {
+    const id = setInterval(() => setH(prev => prev.map(() => 3 + Math.random() * 12)), 100);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div style={{display:'flex',gap:2,alignItems:'center',height:16}}>
+      {h.map((v,i) => (
+        <div key={i} style={{width:2,height:v,background:T.accent,borderRadius:1,transition:'height 0.09s ease'}}/>
+      ))}
+    </div>
+  );
+}
+
+/* ── Section Label ──────────────────────────────────── */
+const SectionLabel = ({children}) => (
+  <div style={{fontSize:9,fontFamily:T.sans,fontWeight:600,color:T.dim,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+    {children}
+  </div>
+);
+
+/* ── Left Panel ─────────────────────────────────────── */
+function LeftPanel({ recording, onToggleRecord, recordTime, dragging, onDragOver, onDragLeave, onDrop, micDevices, selectedMic, onSelectMic, volcanoOk, openrouterOk, uploadFile }) {
+  const fmt = s => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+
+  return (
+    <div style={{width:158,display:'flex',flexDirection:'column',borderRight:`1px solid ${T.border}`,background:T.surface,flexShrink:0}}>
+
+      {/* ── Record ── */}
+      <div style={{padding:'11px 10px 10px',borderBottom:`1px solid ${T.border}`}}>
+        <SectionLabel>Record</SectionLabel>
+        <button
+          className="record-btn"
+          onClick={onToggleRecord}
+          style={{
+            width:'100%',height:34,borderRadius:17,
+            border:`1.5px solid ${recording ? T.accent : T.border}`,
+            background: recording ? `rgba(248,81,73,0.1)` : T.surface2,
+            color: recording ? T.accent : T.muted,
+            fontFamily:T.mono,fontSize:11,fontWeight:500,
+            display:'flex',alignItems:'center',justifyContent:'center',gap:7,
+            cursor:'pointer',transition:'border-color 0.15s, color 0.15s, background 0.15s',outline:'none',
+            animation: recording ? 'pulse-border 2s infinite' : 'none',
+          }}>
+          {recording
+            ? <><StopIcon size={9}/><span>{fmt(recordTime)}</span><Waveform/></>
+            : <><MicIcon size={13}/><span>Record</span></>}
+        </button>
+
+        <div style={{marginTop:8}}>
+          <select
+            value={selectedMic} onChange={e => onSelectMic(e.target.value)}
+            style={{width:'100%',background:T.surface2,border:`1px solid ${T.border}`,color:T.muted,fontFamily:T.mono,fontSize:10,padding:'4px 6px',borderRadius:4,outline:'none',cursor:'pointer'}}>
+            {micDevices.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* ── Upload ── */}
+      <div style={{padding:'11px 10px',borderBottom:`1px solid ${T.border}`,flex:1,display:'flex',flexDirection:'column'}}>
+        <SectionLabel>Upload Audio</SectionLabel>
+        <div
+          className="upload-zone"
+          onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+          onClick={() => document.getElementById('pr-file-input').click()}
+          style={{
+            flex:1,minHeight:90,
+            border:`1.5px dashed ${dragging ? T.accent : T.border}`,
+            borderRadius:6,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+            gap:6,cursor:'pointer',
+            background: dragging ? `rgba(248,81,73,0.06)` : 'transparent',
+            transition:'border-color 0.15s, background 0.15s',
+          }}>
+          <UploadIcon size={18}/>
+          <div style={{fontFamily:T.mono,fontSize:10,color:T.muted,textAlign:'center',lineHeight:1.6}}>
+            drag & drop<br/>or click
+          </div>
+          <div style={{fontFamily:T.mono,fontSize:9,color:T.dim}}>mp3 · wav · m4a · ogg</div>
+        </div>
+        <input id="pr-file-input" type="file" accept="audio/*" style={{display:'none'}}
+          onChange={e => { if(e.target.files[0]) onDrop({preventDefault:()=>{},dataTransfer:{files:e.target.files}}); e.target.value=''; }}/>
+
+        {uploadFile && (
+          <div style={{marginTop:8,padding:'6px 8px',background:T.surface2,borderRadius:4,border:`1px solid ${T.border}`,animation:'fade-in 0.2s'}}>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{uploadFile.name}</div>
+            <div style={{display:'flex',alignItems:'center',gap:5,marginTop:4}}>
+              {uploadFile.done
+                ? <><div style={{width:5,height:5,borderRadius:'50%',background:T.green}}/><span style={{fontFamily:T.mono,fontSize:9,color:T.green}}>transcribed</span></>
+                : <><div style={{width:5,height:5,borderRadius:'50%',background:T.yellow,animation:'blink 1s infinite'}}/><span style={{fontFamily:T.mono,fontSize:9,color:T.yellow}}>processing…</span></>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Status ── */}
+      <div style={{padding:'10px'}}>
+        <SectionLabel>Status</SectionLabel>
+        <div style={{display:'flex',flexDirection:'column',gap:5}}>
+          <StatusRow label="Volcano ASR" ok={volcanoOk}/>
+          <StatusRow label="OpenRouter"  ok={openrouterOk}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const StatusRow = ({label, ok}) => (
+  <div style={{display:'flex',alignItems:'center',gap:6}}>
+    <div style={{width:6,height:6,borderRadius:'50%',background:ok ? T.green : T.accent,flexShrink:0}}/>
+    <span style={{fontFamily:T.mono,fontSize:10,color:T.muted}}>{label}</span>
+    <span style={{fontFamily:T.mono,fontSize:9,color:ok ? T.green : T.accent,marginLeft:'auto'}}>{ok ? 'ok' : 'err'}</span>
+  </div>
+);
+
+/* ── Workspace ──────────────────────────────────────── */
+function Workspace({ content, onChange, saving }) {
+  const taRef  = React.useRef();
+  const preRef = React.useRef();
+
+  const highlighted = React.useMemo(() => highlightMd(content), [content]);
+
+  const sharedStyle = {
+    position:'absolute', inset:0,
+    padding:'16px 22px',
+    font:`13.5px/1.85 ${T.mono}`,
+    whiteSpace:'pre-wrap',
+    wordBreak:'break-word',
+    overflowY:'auto',
+    overflowX:'hidden',
+    tabSize:2,
+  };
+
+  const syncScroll = () => {
+    if (preRef.current && taRef.current)
+      preRef.current.scrollTop = taRef.current.scrollTop;
+  };
+
+  const exportMd = () => {
+    const blob = new Blob([content], {type:'text/markdown'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'workspace.md';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0}}>
+      {/* toolbar */}
+      <div style={{height:36,borderBottom:`1px solid ${T.border}`,display:'flex',alignItems:'center',padding:'0 14px',gap:10,background:T.surface,flexShrink:0}}>
+        <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text,flex:1}}>Workspace</span>
+        <span style={{fontFamily:T.mono,fontSize:10,color:T.dim}}>
+          {saving ? <span style={{color:T.yellow}}>saving…</span> : <span style={{color:T.dim}}>auto-save ✓</span>}
+        </span>
+        <div style={{width:1,height:14,background:T.border}}/>
+        <button className="ghost-btn" onClick={exportMd}
+          style={{fontFamily:T.mono,fontSize:10,color:T.muted,background:'none',border:`1px solid ${T.border}`,borderRadius:4,padding:'2px 9px',cursor:'pointer',transition:'border-color 0.12s, color 0.12s'}}>
+          Export .md
+        </button>
+      </div>
+
+      {/* editor */}
+      <div style={{flex:1,position:'relative',background:T.bg,overflow:'hidden'}}>
+        <pre ref={preRef}
+          aria-hidden="true"
+          dangerouslySetInnerHTML={{__html: highlighted + '\n'}}
+          style={{...sharedStyle, color:T.text, background:T.bg, margin:0, pointerEvents:'none', overflow:'hidden'}}
+        />
+        <textarea ref={taRef}
+          value={content}
+          onChange={e => onChange(e.target.value)}
+          onScroll={syncScroll}
+          spellCheck={false}
+          autoCorrect="off"
+          style={{...sharedStyle, color:'transparent', caretColor:T.text, background:'transparent',
+            border:'none', outline:'none', resize:'none', position:'absolute', zIndex:1,
+            width:'100%', height:'100%'}}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ── Chat Panel ─────────────────────────────────────── */
+const MODELS = [
+  {id:'openai/gpt-4o',          label:'gpt-4o'},
+  {id:'openai/gpt-4o-mini',     label:'gpt-4o-mini'},
+  {id:'anthropic/claude-3.5-sonnet', label:'claude-3.5-sonnet'},
+  {id:'anthropic/claude-3-haiku',    label:'claude-3-haiku'},
+  {id:'google/gemini-2.0-flash',     label:'gemini-2.0-flash'},
+  {id:'meta-llama/llama-3.3-70b-instruct', label:'llama-3.3-70b'},
+];
+
+function ChatPanel({ history, onSend, isProcessing, model, onModelChange }) {
+  const [input, setInput]  = React.useState('');
+  const listRef            = React.useRef();
+
+  React.useEffect(() => {
+    if (listRef.current)
+      listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [history, isProcessing]);
+
+  const send = () => {
+    const t = input.trim();
+    if (!t || isProcessing) return;
+    onSend(t);
+    setInput('');
+  };
+
+  return (
+    <div style={{width:256,display:'flex',flexDirection:'column',borderLeft:`1px solid ${T.border}`,background:T.surface,flexShrink:0}}>
+      {/* header */}
+      <div style={{height:36,borderBottom:`1px solid ${T.border}`,display:'flex',alignItems:'center',padding:'0 10px',gap:8}}>
+        <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text,flex:1}}>LLM</span>
+        <select value={model} onChange={e => onModelChange(e.target.value)}
+          style={{background:T.surface2,border:`1px solid ${T.border}`,color:T.muted,fontFamily:T.mono,fontSize:10,padding:'2px 5px',borderRadius:4,outline:'none',cursor:'pointer',maxWidth:148}}>
+          {MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+      </div>
+
+      {/* history */}
+      <div ref={listRef} style={{flex:1,overflowY:'auto',padding:'12px 10px',display:'flex',flexDirection:'column',gap:0}}>
+        {history.length === 0 && (
+          <div style={{fontFamily:T.mono,fontSize:11,color:T.dim,lineHeight:1.7,fontStyle:'italic',padding:'4px 0'}}>
+            Ask the LLM to process the workspace. Output is appended below a{' '}
+            <span style={{color:T.muted}}>---</span> divider with a generated heading.
+          </div>
+        )}
+        {history.map((msg, i) => (
+          <div key={i} className="chat-entry" style={{paddingBottom:12,marginBottom:12,borderBottom: i < history.length-1 ? `1px solid ${T.border}` : 'none'}}>
+            <div style={{fontFamily:T.mono,fontSize:9,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,
+              color: msg.role==='user' ? T.blue : T.green}}>
+              {msg.role === 'user' ? '→ you' : '← llm'}
+            </div>
+            <div style={{fontFamily:T.mono,fontSize:12,color:T.text,lineHeight:1.65,whiteSpace:'pre-wrap'}}>
+              {msg.content}
+            </div>
+          </div>
+        ))}
+        {isProcessing && (
+          <div className="chat-entry" style={{paddingBottom:12}}>
+            <div style={{fontFamily:T.mono,fontSize:9,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8,color:T.green}}>← llm</div>
+            <div style={{display:'flex',gap:4,alignItems:'center'}}>
+              {[0,1,2].map(i => (
+                <div key={i} style={{width:5,height:5,borderRadius:'50%',background:T.muted,
+                  animation:`blink 1.2s ${i*0.22}s infinite`}}/>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* input */}
+      <div style={{padding:'8px',borderTop:`1px solid ${T.border}`,display:'flex',flexDirection:'column',gap:6}}>
+        <textarea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          placeholder="Ask the LLM…"
+          rows={3}
+          style={{
+            background:T.surface2,border:`1px solid ${T.border}`,borderRadius:4,
+            color:T.text,fontFamily:T.mono,fontSize:12,padding:'7px 9px',
+            resize:'none',outline:'none',lineHeight:1.6,width:'100%',
+            transition:'border-color 0.12s',
+          }}
+          onFocus={e  => e.target.style.borderColor = T.dim}
+          onBlur={e   => e.target.style.borderColor = T.border}
+        />
+        <button className="send-btn" onClick={send}
+          disabled={isProcessing || !input.trim()}
+          style={{
+            height:30,borderRadius:4,border:'none',
+            background: (isProcessing || !input.trim()) ? T.surface3 : T.accent,
+            color: (isProcessing || !input.trim()) ? T.dim : '#fff',
+            fontFamily:T.sans,fontSize:12,fontWeight:600,
+            display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+            cursor:(isProcessing || !input.trim()) ? 'not-allowed' : 'pointer',
+            transition:'background 0.15s, color 0.15s',
+          }}>
+          <SendIcon size={11}/>
+          Send
+        </button>
+        <div style={{fontFamily:T.mono,fontSize:9,color:T.dim,textAlign:'center'}}>
+          shift+enter for newline · LLM reads full workspace
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Titlebar ───────────────────────────────────────── */
+function Titlebar() {
+  return (
+    <div style={{height:36,borderBottom:`1px solid ${T.border}`,display:'flex',alignItems:'center',padding:'0 14px',background:T.surface,flexShrink:0,gap:10}}>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="7.5" stroke={T.accent} strokeWidth="1.5"/>
+          <rect x="6" y="4" width="4" height="6" rx="2" fill={T.accent}/>
+          <path d="M4 8a4 4 0 008 0M8 12v1.5M6 13.5h4" stroke={T.accent} strokeWidth="1.2" strokeLinecap="round"/>
+        </svg>
+        <span style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text}}>Project Recorder</span>
+      </div>
+      <div style={{width:1,height:14,background:T.border}}/>
+      <span style={{fontFamily:T.mono,fontSize:10,color:T.dim}}>speech-to-text workspace</span>
+    </div>
+  );
+}
+
+/* ── Sample Texts ───────────────────────────────────── */
+const SAMPLE_RECORD = `\n\n---\n\n# Transcription — Recording 1\n\nSo today we're going over the project roadmap for Q2. The main priorities are finishing the authentication module, getting the mobile app to feature parity, and beginning work on the analytics dashboard.\n\nJohn mentioned that the design handoff should happen by end of week. Sarah will review the API contracts on Tuesday. We also need to schedule a sync with the infrastructure team about the new deployment pipeline.\n\n**Action items:**\n- John to share Figma file by Friday\n- Sarah to open ticket for API review\n- Everyone to block Thursday afternoon for the infra sync\n`;
+
+const SAMPLE_UPLOAD = (name) => `\n\n---\n\n# Transcription — ${name}\n\n**Interviewer:** Can you walk me through your background?\n\n**Candidate:** Sure. I've spent the last four years working on distributed systems at a mid-sized fintech. Most of my work was around event-driven architecture and making sure our pipelines were resilient to failure.\n\n**Interviewer:** What was the most challenging problem you solved?\n\n**Candidate:** Probably the data consistency issue we had when we moved from a monolith to microservices. We had subtle race conditions that only showed up under high load. It took two weeks of profiling and redesigning the event schema before we had it stable.\n`;
+
+const INITIAL_CONTENT = `# Workspace\n\nStart **recording** or upload an audio file to begin transcription.\n\nYour transcribed text will appear here in real-time.\n`;
+
+/* ── App ────────────────────────────────────────────── */
+function App() {
+  const [content,       setContent]       = React.useState(() => localStorage.getItem('pr-workspace') || INITIAL_CONTENT);
+  const [recording,     setRecording]     = React.useState(false);
+  const [recordTime,    setRecordTime]    = React.useState(0);
+  const [dragging,      setDragging]      = React.useState(false);
+  const [saving,        setSaving]        = React.useState(false);
+  const [chatHistory,   setChatHistory]   = React.useState([]);
+  const [isProcessing,  setIsProcessing]  = React.useState(false);
+  const [model,         setModel]         = React.useState('openai/gpt-4o');
+  const [uploadFile,    setUploadFile]    = React.useState(null);
+  const [selectedMic,   setSelectedMic]   = React.useState('default');
+
+  const timerRef   = React.useRef();
+  const saveTimer  = React.useRef();
+
+  const micDevices = [
+    {id:'default',  label:'Default Input'},
+    {id:'usb',      label:'USB Microphone'},
+    {id:'airpods',  label:'AirPods Pro'},
+    {id:'built-in', label:'Built-in Microphone'},
+  ];
+
+  /* content change with auto-save */
+  const handleContentChange = val => {
+    setContent(val);
+    setSaving(true);
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      localStorage.setItem('pr-workspace', val);
+      setSaving(false);
+    }, 700);
+  };
+
+  /* recording toggle */
+  const toggleRecord = () => {
+    if (!recording) {
+      setRecording(true);
+      setRecordTime(0);
+      timerRef.current = setInterval(() => setRecordTime(t => t+1), 1000);
+    } else {
+      setRecording(false);
+      clearInterval(timerRef.current);
+      handleContentChange(content + SAMPLE_RECORD);
+    }
+  };
+  React.useEffect(() => () => clearInterval(timerRef.current), []);
+
+  /* drag-drop / upload */
+  const handleDrop = e => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer?.files?.[0] || e.target?.files?.[0];
+    if (!file) return;
+    setUploadFile({name: file.name, done: false});
+    setTimeout(() => {
+      handleContentChange(content + SAMPLE_UPLOAD(file.name));
+      setUploadFile({name: file.name, done: true});
+    }, 1400);
+  };
+
+  /* LLM send */
+  const handleSend = async text => {
+    setChatHistory(h => [...h, {role:'user', content:text}]);
+    setIsProcessing(true);
+    const heading = text.charAt(0).toUpperCase() + text.slice(1).replace(/[?.!]+$/, '');
+    try {
+      const response = await window.claude.complete({
+        messages: [{
+          role:'user',
+          content:`You are a text-processing assistant. A user has a Markdown workspace with transcribed audio. Process it per their request and return ONLY the processed output as Markdown. No preamble or explanation.\n\nWorkspace:\n\`\`\`markdown\n${content}\n\`\`\`\n\nRequest: ${text}`,
+        }],
+      });
+      const appended = `\n\n---\n\n# ${heading}\n\n${response}`;
+      handleContentChange(content + appended);
+      setChatHistory(h => [...h, {role:'assistant', content:`Done. Output appended to workspace under "# ${heading}".`}]);
+    } catch(err) {
+      setChatHistory(h => [...h, {role:'assistant', content:`Error: ${err.message}`}]);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',background:T.bg,color:T.text}}>
+      <Titlebar/>
+      <div style={{flex:1,display:'flex',minHeight:0}}>
+        <LeftPanel
+          recording={recording}     onToggleRecord={toggleRecord}
+          recordTime={recordTime}
+          dragging={dragging}
+          onDragOver={e => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          micDevices={micDevices}   selectedMic={selectedMic}   onSelectMic={setSelectedMic}
+          volcanoOk={true}          openrouterOk={true}
+          uploadFile={uploadFile}
+        />
+        <Workspace content={content} onChange={handleContentChange} saving={saving}/>
+        <ChatPanel
+          history={chatHistory}    onSend={handleSend}
+          isProcessing={isProcessing}
+          model={model}            onModelChange={setModel}
+        />
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
