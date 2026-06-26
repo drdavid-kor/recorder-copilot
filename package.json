@@ -5,6 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build": "node -e \"console.log('No build step: Cloudflare serves ./public and ./functions directly')\"",
+    "deploy": "npx wrangler pages deploy public",
     "cf:dev": "npx wrangler pages dev public --kv=RECORDER_KV",
     "cf:deploy": "npx wrangler pages deploy public",
     "cf:kv:create": "npx wrangler kv namespace create RECORDER_KV"

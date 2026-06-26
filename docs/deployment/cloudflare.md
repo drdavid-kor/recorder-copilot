@@ -70,13 +70,15 @@ Open the local URL printed by Wrangler, usually `http://localhost:8788`.
 
 1. Create a Pages project connected to this repository.
 2. Set the build output directory to `public`.
-3. Leave the build command empty unless your Pages project requires one.
-4. Add the `OPENROUTER_API_KEY` secret.
-5. Add optional variables from `wrangler.toml` if you want to override defaults.
-6. Create and bind a KV namespace as `RECORDER_KV`.
-7. Deploy the Pages project.
+3. Set the build command to `npm run build`.
+4. Set the deploy command to `npm run deploy` or `npx wrangler pages deploy public`.
+5. Do not use `npx wrangler deploy`; it targets Workers and fails for this Pages app without a Worker entrypoint.
+6. Add the `OPENROUTER_API_KEY` secret.
+7. Add optional variables from `wrangler.toml` if you want to override defaults.
+8. Create and bind a KV namespace as `RECORDER_KV`.
+9. Deploy the Pages project.
 
-For BYOK-only deployments, skip step 4 and tell users to open **Settings** in the app and save their own OpenRouter key locally.
+For BYOK-only deployments, skip step 6 and tell users to open **Settings** in the app and save their own OpenRouter key locally.
 
 CLI deploy:
 

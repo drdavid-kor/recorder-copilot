@@ -24,6 +24,14 @@ npm run cf:dev                       # http://localhost:8788
 
 For production Cloudflare Pages, bind a KV namespace named `RECORDER_KV` and set `OPENROUTER_API_KEY` as a secret. See `docs/deployment/cloudflare.md`.
 
+Cloudflare build settings:
+
+- Build command: `npm run build`
+- Deploy command: `npm run deploy` or `npx wrangler pages deploy public`
+- Build output directory: `public`
+
+Do not use `npx wrangler deploy` for this Pages app; that command targets Workers and will fail without a Worker entrypoint.
+
 ## Configuration
 
 For the local Node server, configuration lives in `config.json` at the project root (gitignored):
