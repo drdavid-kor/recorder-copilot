@@ -155,7 +155,7 @@ const StatusRow = ({label, ok}) => (
 );
 
 /* ── Left Panel ─────────────────────────────────────── */
-function LeftPanel({ recording, onToggleRecord, recordTime, dragging, onDragOver, onDragLeave, onDrop, micDevices, selectedMic, onSelectMic, sttOk, openrouterOk, uploadFile }) {
+function LeftPanel({ recording, onToggleRecord, recordTime, dragging, onDragOver, onDragLeave, onDrop, micDevices, selectedMic, onSelectMic, sttOk, openrouterOk, uploadFile, onOpenSettings, byokActive }) {
   const fmt = s => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 
   return (
@@ -227,6 +227,18 @@ function LeftPanel({ recording, onToggleRecord, recordTime, dragging, onDragOver
             </div>
           </div>
         )}
+      </div>
+
+      {/* ── API Key ── */}
+      <div style={{padding:'10px',borderBottom:`1px solid ${T.border}`}}>
+        <SectionLabel>API Key</SectionLabel>
+        <button className="ghost-btn" onClick={onOpenSettings}
+          style={{width:'100%',fontFamily:T.mono,fontSize:10,color:T.muted,background:T.surface2,border:`1px solid ${T.border}`,borderRadius:4,padding:'5px 8px',cursor:'pointer',transition:'border-color 0.12s, color 0.12s'}}>
+          BYOK Settings
+        </button>
+        <div style={{fontFamily:T.mono,fontSize:9,color:byokActive ? T.green : T.dim,marginTop:6,lineHeight:1.4}}>
+          {byokActive ? 'local key active' : 'server key / none'}
+        </div>
       </div>
 
       {/* ── Status ── */}
@@ -427,8 +439,8 @@ function Titlebar({ onOpenSettings, byokActive }) {
         <span style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text}}>Project Recorder</span>
       </div>
       <div style={{width:1,height:14,background:T.border}}/>
-      <span style={{fontFamily:T.mono,fontSize:10,color:T.dim}}>speech-to-text workspace</span>
-      <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+      <span style={{fontFamily:T.mono,fontSize:10,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>speech-to-text workspace</span>
+      <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
         {byokActive && (
           <span style={{fontFamily:T.mono,fontSize:9,color:T.green,letterSpacing:'0.06em',textTransform:'uppercase'}}>BYOK active</span>
         )}
@@ -883,6 +895,8 @@ function App() {
           micDevices={micDevices}   selectedMic={selectedMic}   onSelectMic={setSelectedMic}
           sttOk={sttOk}  openrouterOk={openrouterOk}
           uploadFile={uploadFile}
+          onOpenSettings={() => setSettingsOpen(true)}
+          byokActive={!!byokKey}
         />
         <Workspace content={content} onChange={handleContentChange} saving={saving}/>
         <ChatPanel
