@@ -26,6 +26,10 @@ const config = loadConfig();
 fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
+function getByokApiKey(req) {
+  return (req.get('X-OpenRouter-Api-Key') || '').trim();
+}
+
 // --- Express App ---
 const app = express();
 const server = http.createServer(app);
@@ -44,13 +48,16 @@ app.get('/api/config', (req, res) => {
   res.json({
     models: config.models || [],
     sttModel: config.sttModel || 'openrouter/auto',
+    storage: 'filesystem',
+    byokSupported: true,
   });
 });
 
 // --- GET /api/health ---
 app.get('/api/health', async (req, res) => {
-  const ok = await validateCredentials(config);
-  res.json({ openrouter: ok });
+  const byok = !!getByokApiKey(req);
+  const ok = await validateCredentials(config, getByokApiKey(req));
+  res.json({ openrouter: ok, stt: ok, storage: 'filesystem', byok });
 });
 
 // --- GET /api/workspace ---
@@ -95,7 +102,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     }
 
     const sttModel = config.sttModel || 'openrouter/auto';
-    const text = await transcribeAudio(base64Data, format, sttModel, config);
+    const text = await transcribeAudio(base64Data, format, sttModel, config, getByokApiKey(req));
 
     res.json({ text, filename });
   } catch (err) {
@@ -113,7 +120,7 @@ app.post('/api/chat', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
 
   try {
-    const upstream = await streamChat(message, workspace || '', model || config.models?.[0]?.id, config);
+    const upstream = await streamChat(message, workspace || '', model || config.models?.[0]?.id, config, getByokApiKey(req));
 
     const reader = upstream.body;
 

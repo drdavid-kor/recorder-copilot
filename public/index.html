@@ -155,7 +155,7 @@ const StatusRow = ({label, ok}) => (
 );
 
 /* ── Left Panel ─────────────────────────────────────── */
-function LeftPanel({ recording, onToggleRecord, recordTime, dragging, onDragOver, onDragLeave, onDrop, micDevices, selectedMic, onSelectMic, volcanoOk, openrouterOk, uploadFile }) {
+function LeftPanel({ recording, onToggleRecord, recordTime, dragging, onDragOver, onDragLeave, onDrop, micDevices, selectedMic, onSelectMic, sttOk, openrouterOk, uploadFile }) {
   const fmt = s => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 
   return (
@@ -233,7 +233,7 @@ function LeftPanel({ recording, onToggleRecord, recordTime, dragging, onDragOver
       <div style={{padding:'10px'}}>
         <SectionLabel>Status</SectionLabel>
         <div style={{display:'flex',flexDirection:'column',gap:5}}>
-          <StatusRow label="Volcano ASR" ok={volcanoOk}/>
+          <StatusRow label="OpenRouter STT" ok={sttOk}/>
           <StatusRow label="OpenRouter"  ok={openrouterOk}/>
         </div>
       </div>
@@ -287,7 +287,7 @@ function Workspace({ content, onChange, saving }) {
         <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text,flex:1}}>Workspace</span>
         <span style={{fontFamily:T.mono,fontSize:10,color:T.dim}}>
           {saving === 'saving' ? <span style={{color:T.yellow}}>saving…</span>
-           : saving === 'saved' ? <span style={{color:T.dim}}>auto-save ✓</span>
+           : saving === 'error' ? <span style={{color:T.accent}}>save failed</span>
            : <span style={{color:T.dim}}>auto-save ✓</span>}
         </span>
         <div style={{width:1,height:14,background:T.border}}/>
@@ -415,7 +415,7 @@ function ChatPanel({ history, onSend, isProcessing, model, onModelChange, models
 }
 
 /* ── Titlebar ───────────────────────────────────────── */
-function Titlebar() {
+function Titlebar({ onOpenSettings, byokActive }) {
   return (
     <div style={{height:36,borderBottom:`1px solid ${T.border}`,display:'flex',alignItems:'center',padding:'0 14px',background:T.surface,flexShrink:0,gap:10}}>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -428,6 +428,71 @@ function Titlebar() {
       </div>
       <div style={{width:1,height:14,background:T.border}}/>
       <span style={{fontFamily:T.mono,fontSize:10,color:T.dim}}>speech-to-text workspace</span>
+      <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+        {byokActive && (
+          <span style={{fontFamily:T.mono,fontSize:9,color:T.green,letterSpacing:'0.06em',textTransform:'uppercase'}}>BYOK active</span>
+        )}
+        <button className="ghost-btn" onClick={onOpenSettings}
+          style={{fontFamily:T.mono,fontSize:10,color:T.muted,background:'none',border:`1px solid ${T.border}`,borderRadius:4,padding:'2px 9px',cursor:'pointer',transition:'border-color 0.12s, color 0.12s'}}>
+          Settings
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Settings ───────────────────────────────────────── */
+function SettingsModal({ byokDraft, byokActive, onDraftChange, onSave, onClear, onClose }) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{position:'fixed',inset:0,zIndex:10,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',padding:18}}>
+      <div style={{width:'min(460px, 100%)',background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,boxShadow:'0 24px 80px rgba(0,0,0,0.45)',overflow:'hidden'}}>
+        <div style={{height:42,borderBottom:`1px solid ${T.border}`,display:'flex',alignItems:'center',padding:'0 14px',gap:10}}>
+          <span style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text,flex:1}}>Settings</span>
+          <button className="ghost-btn" onClick={onClose}
+            style={{fontFamily:T.mono,fontSize:10,color:T.muted,background:'none',border:`1px solid ${T.border}`,borderRadius:4,padding:'2px 8px',cursor:'pointer'}}>
+            Close
+          </button>
+        </div>
+
+        <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
+          <div>
+            <SectionLabel>Bring Your Own Key</SectionLabel>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.muted,lineHeight:1.65,marginBottom:9}}>
+              Use your own OpenRouter API key for transcription and LLM chat. The key is stored in this browser only and is sent to the backend with API calls; it is never saved by the backend.
+            </div>
+            <input
+              type="password"
+              value={byokDraft}
+              onChange={e => onDraftChange(e.target.value)}
+              placeholder="sk-or-v1-..."
+              autoComplete="off"
+              spellCheck={false}
+              style={{width:'100%',background:T.surface2,border:`1px solid ${T.border}`,borderRadius:5,color:T.text,fontFamily:T.mono,fontSize:12,padding:'9px 10px',outline:'none'}}
+              onFocus={e => e.target.style.borderColor = T.dim}
+              onBlur={e => e.target.style.borderColor = T.border}
+            />
+          </div>
+
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{fontFamily:T.mono,fontSize:10,color:byokActive ? T.green : T.dim,flex:1}}>
+              {byokActive ? 'BYOK key saved locally' : 'Using server-configured key when available'}
+            </div>
+            <button className="ghost-btn" onClick={onClear}
+              style={{fontFamily:T.mono,fontSize:10,color:T.muted,background:'none',border:`1px solid ${T.border}`,borderRadius:4,padding:'5px 10px',cursor:'pointer'}}>
+              Clear
+            </button>
+            <button className="send-btn" onClick={onSave}
+              style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:'#fff',background:T.accent,border:'none',borderRadius:4,padding:'6px 13px',cursor:'pointer'}}>
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -479,6 +544,22 @@ async function blobToWavBase64(blob) {
 
 /* ── App ────────────────────────────────────────────── */
 const DEFAULT_CONTENT = '# Workspace\n\nStart **recording** or upload an audio file to begin transcription.\n\nYour transcribed text will appear here in real-time.\n';
+const BYOK_STORAGE_KEY = 'project-recorder.openrouter-api-key';
+
+function readStoredByokKey() {
+  try {
+    return localStorage.getItem(BYOK_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function writeStoredByokKey(value) {
+  try {
+    if (value) localStorage.setItem(BYOK_STORAGE_KEY, value);
+    else localStorage.removeItem(BYOK_STORAGE_KEY);
+  } catch {}
+}
 
 function App() {
   const [content, setContent]          = React.useState(DEFAULT_CONTENT);
@@ -494,6 +575,10 @@ function App() {
   const [selectedMic, setSelectedMic]  = React.useState('default');
   const [micDevices, setMicDevices]    = React.useState([{id:'default', label:'Default Input'}]);
   const [openrouterOk, setOpenrouterOk]= React.useState(false);
+  const [sttOk, setSttOk]              = React.useState(false);
+  const [settingsOpen, setSettingsOpen]= React.useState(false);
+  const [byokKey, setByokKey]          = React.useState(readStoredByokKey);
+  const [byokDraft, setByokDraft]      = React.useState(byokKey);
 
   const timerRef       = React.useRef();
   const saveTimer      = React.useRef();
@@ -503,15 +588,18 @@ function App() {
 
   contentRef.current = content;
 
-  // --- Load config, health, workspace on mount ---
+  const apiHeaders = React.useCallback((headers = {}) => {
+    const next = {...headers};
+    const key = byokKey.trim();
+    if (key) next['X-OpenRouter-Api-Key'] = key;
+    return next;
+  }, [byokKey]);
+
+  // --- Load config, workspace on mount ---
   React.useEffect(() => {
     fetch('/api/config').then(r => r.json()).then(data => {
       setModels(data.models || []);
       if (data.models?.length) setModel(data.models[0].id);
-    }).catch(() => {});
-
-    fetch('/api/health').then(r => r.json()).then(data => {
-      setOpenrouterOk(!!data.openrouter);
     }).catch(() => {});
 
     fetch('/api/workspace').then(r => r.text()).then(text => {
@@ -531,6 +619,34 @@ function App() {
     }).catch(() => {});
   }, []);
 
+  // --- Validate the server key or the locally saved BYOK key ---
+  React.useEffect(() => {
+    fetch('/api/health', { headers: apiHeaders() }).then(r => r.json()).then(data => {
+      setOpenrouterOk(!!data.openrouter);
+      setSttOk(data.stt == null ? !!data.openrouter : !!data.stt);
+    }).catch(() => {
+      setOpenrouterOk(false);
+      setSttOk(false);
+    });
+  }, [apiHeaders]);
+
+  React.useEffect(() => {
+    if (settingsOpen) setByokDraft(byokKey);
+  }, [settingsOpen, byokKey]);
+
+  const saveByokSettings = React.useCallback(() => {
+    const key = byokDraft.trim();
+    writeStoredByokKey(key);
+    setByokKey(key);
+    setSettingsOpen(false);
+  }, [byokDraft]);
+
+  const clearByokSettings = React.useCallback(() => {
+    writeStoredByokKey('');
+    setByokKey('');
+    setByokDraft('');
+  }, []);
+
   // --- Auto-save to backend ---
   const handleContentChange = React.useCallback((val) => {
     setContent(val);
@@ -542,7 +658,10 @@ function App() {
         method: 'POST',
         headers: {'Content-Type': 'text/plain'},
         body: val,
-      }).then(() => setSaving('saved')).catch(() => setSaving('saved'));
+      }).then(r => {
+        if (!r.ok) throw new Error('Save failed');
+        setSaving('saved');
+      }).catch(() => setSaving('error'));
     }, 700);
   }, []);
 
@@ -559,7 +678,7 @@ function App() {
       const formData = new FormData();
       formData.append('audio', file);
 
-      const res = await fetch('/api/transcribe', { method: 'POST', body: formData });
+      const res = await fetch('/api/transcribe', { method: 'POST', headers: apiHeaders(), body: formData });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Transcription failed');
 
@@ -571,7 +690,7 @@ function App() {
     } catch (err) {
       setUploadFile({name: file.name, done: false, error: err.message});
     }
-  }, [handleContentChange]);
+  }, [apiHeaders, handleContentChange]);
 
   // --- Mic recording: capture with MediaRecorder, transcribe on stop ---
   const toggleRecord = React.useCallback(async () => {
@@ -623,7 +742,7 @@ function App() {
 
           const res = await fetch('/api/transcribe', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               audio: base64,
               format: 'wav',
@@ -651,7 +770,7 @@ function App() {
     } catch (err) {
       console.error('Mic access failed:', err);
     }
-  }, [recording, selectedMic, handleContentChange]);
+  }, [recording, selectedMic, apiHeaders, handleContentChange]);
 
   React.useEffect(() => () => clearInterval(timerRef.current), []);
 
@@ -663,7 +782,7 @@ function App() {
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: apiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           message: text,
           workspace: contentRef.current,
@@ -738,11 +857,21 @@ function App() {
     } finally {
       setIsProcessing(false);
     }
-  }, [model, handleContentChange]);
+  }, [model, apiHeaders, handleContentChange]);
 
   return (
     <div style={{display:'flex',flexDirection:'column',height:'100vh',background:T.bg,color:T.text}}>
-      <Titlebar/>
+      <Titlebar onOpenSettings={() => setSettingsOpen(true)} byokActive={!!byokKey}/>
+      {settingsOpen && (
+        <SettingsModal
+          byokDraft={byokDraft}
+          byokActive={!!byokKey}
+          onDraftChange={setByokDraft}
+          onSave={saveByokSettings}
+          onClear={clearByokSettings}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
       <div style={{flex:1,display:'flex',minHeight:0}}>
         <LeftPanel
           recording={recording}     onToggleRecord={toggleRecord}
@@ -752,7 +881,7 @@ function App() {
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
           micDevices={micDevices}   selectedMic={selectedMic}   onSelectMic={setSelectedMic}
-          volcanoOk={openrouterOk}  openrouterOk={openrouterOk}
+          sttOk={sttOk}  openrouterOk={openrouterOk}
           uploadFile={uploadFile}
         />
         <Workspace content={content} onChange={handleContentChange} saving={saving}/>

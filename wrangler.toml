@@ -1,0 +1,13 @@
+name = "recorder-copilot"
+compatibility_date = "2026-06-26"
+pages_build_output_dir = "./public"
+
+[vars]
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1"
+STT_MODEL = "xiaomi/mimo-v2-omni"
+MODELS_JSON = """[
+  { "id": "deepseek/deepseek-v3.2", "label": "DeepSeek V3.2" },
+  { "id": "minimax/minimax-m2.7", "label": "MiniMax M2.7" },
+  { "id": "x-ai/grok-4.1-fast", "label": "Grok 4.1 Fast" }
+]"""
+
