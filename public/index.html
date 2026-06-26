@@ -42,10 +42,48 @@
   .send-btn:hover:not(:disabled) { filter: brightness(1.12); }
   .upload-zone:hover { border-color: #8b949e !important; background: rgba(255,255,255,0.03) !important; }
   .chat-entry { animation: slide-in 0.2s ease; }
+
+  #pr-byok-static {
+    position: fixed;
+    top: 6px;
+    right: 10px;
+    z-index: 50;
+    border: 1px solid #30363d;
+    border-radius: 999px;
+    background: #1c2128;
+    color: #e6edf3;
+    font: 600 10px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.08em;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  #pr-byok-static:hover { border-color: #8b949e; color: #fff; }
 </style>
 </head>
 <body>
 <div id="root"></div>
+<button id="pr-byok-static" type="button" title="Bring your own OpenRouter API key">BYOK</button>
+<script>
+  (function () {
+    const storageKey = 'project-recorder.openrouter-api-key';
+    window.addEventListener('DOMContentLoaded', function () {
+      const btn = document.getElementById('pr-byok-static');
+      if (!btn) return;
+      btn.addEventListener('click', function () {
+        const event = new CustomEvent('project-recorder-open-settings', { cancelable: true });
+        window.dispatchEvent(event);
+        if (event.defaultPrevented) return;
+
+        const current = localStorage.getItem(storageKey) || '';
+        const next = prompt('OpenRouter API key (leave blank to clear):', current);
+        if (next == null) return;
+        const trimmed = next.trim();
+        if (trimmed) localStorage.setItem(storageKey, trimmed);
+        else localStorage.removeItem(storageKey);
+      });
+    });
+  })();
+</script>
 <script type="text/babel">
 
 /* ── Design Tokens ─────────────────────────────────── */
@@ -645,6 +683,15 @@ function App() {
   React.useEffect(() => {
     if (settingsOpen) setByokDraft(byokKey);
   }, [settingsOpen, byokKey]);
+
+  React.useEffect(() => {
+    const openSettings = (event) => {
+      event.preventDefault();
+      setSettingsOpen(true);
+    };
+    window.addEventListener('project-recorder-open-settings', openSettings);
+    return () => window.removeEventListener('project-recorder-open-settings', openSettings);
+  }, []);
 
   const saveByokSettings = React.useCallback(() => {
     const key = byokDraft.trim();
