@@ -11,3 +11,18 @@ MODELS_JSON = """[
   { "id": "x-ai/grok-4.1-fast", "label": "Grok 4.1 Fast" }
 ]"""
 
+# Workspace persistence (GET/POST /api/workspace) needs a KV namespace bound as
+# RECORDER_KV. Without it, reads return the default workspace and saves fail (503).
+#
+# Two ways to bind it:
+#   A) CLI deploys (`npm run deploy`): create the namespace with `npm run kv:create`,
+#      then uncomment the block below and paste the returned id.
+#   B) Git-connected Pages project: bind it in the dashboard
+#      (Settings > Functions > KV namespace bindings) as RECORDER_KV.
+#
+# Do NOT commit a placeholder/fake id — a non-existent id makes deploys fail.
+#
+# [[kv_namespaces]]
+# binding = "RECORDER_KV"
+# id = "<your-kv-namespace-id>"
+

@@ -55,14 +55,17 @@ Example `MODELS_JSON`:
 npm install
 cp .dev.vars.example .dev.vars
 # Edit .dev.vars and set OPENROUTER_API_KEY.
-npm run cf:dev
+npm run dev
 ```
 
-The `cf:dev` script starts Pages Functions with a local KV binding:
+The `dev` script starts Pages Functions with a local (ephemeral) KV binding:
 
 ```bash
-npx wrangler pages dev public --kv=RECORDER_KV
+wrangler pages dev --kv RECORDER_KV
 ```
+
+The static directory comes from `pages_build_output_dir` in `wrangler.toml`, so no
+positional directory argument is needed.
 
 Open the local URL printed by Wrangler, usually `http://localhost:8788`.
 
@@ -71,11 +74,11 @@ Open the local URL printed by Wrangler, usually `http://localhost:8788`.
 1. Create a Pages project connected to this repository.
 2. Set the build output directory to `public`.
 3. Set the build command to `npm run build`.
-4. Set the deploy command to `npm run deploy` or `npx wrangler pages deploy public`.
-5. Do not use `npx wrangler deploy`; it targets Workers and fails for this Pages app without a Worker entrypoint.
+4. Set the deploy command to `npm run deploy` (runs `wrangler pages deploy`; the output dir comes from `wrangler.toml`).
+5. Do not use `wrangler deploy`; it targets Workers and fails for this Pages app without a Worker entrypoint.
 6. Add the `OPENROUTER_API_KEY` secret.
 7. Add optional variables from `wrangler.toml` if you want to override defaults.
-8. Create and bind a KV namespace as `RECORDER_KV`.
+8. Create and bind a KV namespace as `RECORDER_KV` (see below).
 9. Deploy the Pages project.
 
 For BYOK-only deployments, skip step 6 and tell users to open **Settings** in the app and save their own OpenRouter key locally.
@@ -83,16 +86,27 @@ For BYOK-only deployments, skip step 6 and tell users to open **Settings** in th
 CLI deploy:
 
 ```bash
-npm run cf:deploy
+npm run deploy
 ```
 
-KV creation helper:
+### Binding RECORDER_KV
+
+Create the namespace:
 
 ```bash
-npm run cf:kv:create
+npm run kv:create
 ```
 
-After creating the namespace, bind it to the Pages project in Cloudflare. `wrangler.toml` intentionally does not include a placeholder KV namespace ID because a fake ID can break deploys.
+Then bind it one of two ways:
+
+- **CLI deploys** — uncomment the `[[kv_namespaces]]` block in `wrangler.toml` and paste the
+  printed id. The block ships commented out because a placeholder/fake id makes
+  `wrangler pages deploy` fail.
+- **Git-connected project** — bind the namespace as `RECORDER_KV` in the dashboard under
+  **Settings → Functions → KV namespace bindings**. Dashboard bindings apply to every
+  deployment, so `wrangler.toml` can stay commented.
+
+Without either, the app still loads but workspace saves return HTTP 503.
 
 ## API Route Mapping
 

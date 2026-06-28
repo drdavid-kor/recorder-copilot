@@ -4,57 +4,84 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Project Recorder** is a single-page speech-to-text (STT) workspace tool. Users upload audio files or record via microphone, transcribe using Volcano Engine ASR APIs, and process transcriptions with an LLM via OpenRouter.
+**Project Recorder** is a single-page speech-to-text (STT) workspace tool. Users upload audio files or record via microphone, transcribe with an audio-capable LLM through OpenRouter, and iterate on the transcript with an LLM chat panel.
+
+The app deploys to **Cloudflare Pages + Pages Functions**. There is no separate Node server — the backend is the set of `/api/*` Functions in `functions/`.
 
 ## Setup & Run
 
 ```bash
 npm install
-cp config.example.json config.json   # Fill in API keys
-node server.js                        # http://localhost:3000
+cp .dev.vars.example .dev.vars      # fill in OPENROUTER_API_KEY
+npm run dev                         # http://localhost:8788 (wrangler pages dev)
+```
+
+Deploy:
+
+```bash
+npm run kv:create                   # one-time: create the RECORDER_KV namespace
+# uncomment [[kv_namespaces]] in wrangler.toml and paste the id (or bind it in the dashboard)
+npm run deploy                      # wrangler pages deploy (config-driven)
 ```
 
 ## Project Structure
 
-- `server.js` — Express backend with all REST + WebSocket routes
 - `public/index.html` — Single-page React frontend (React 18 via CDN, no build step)
-- `lib/volcengine-file.js` — File ASR: submit + poll workflow
-- `lib/volcengine-stream.js` — Streaming ASR: binary WebSocket protocol relay
-- `lib/openrouter.js` — LLM chat proxy with SSE streaming
-- `config.json` — API keys and model list (gitignored)
-- `data/workspace.md` — Auto-saved workspace content (gitignored)
-- `docs/prd.md` — Product Requirements Document (source of truth)
+- `functions/api/*.js` — Pages Functions: one file per `/api/*` route
+- `functions/_shared/*.js` — Shared helpers (config, http responses, OpenRouter client)
+- `wrangler.toml` — Pages/Functions config: output dir, `[vars]`, and the (commented) KV binding
+- `.dev.vars.example` — Template for local Cloudflare secrets (`.dev.vars`, gitignored)
+- `docs/deployment/cloudflare.md` — Cloudflare setup guide
+- `docs/prd.md` — Product Requirements Document
+- `docs/specs/technical-spec.md` — Technical spec
 
 ## Architecture
 
-**Frontend:** Single-page React app served by the backend. Three-column layout:
-- **Left panel**: Mic recording, audio upload (drag-drop), device selector, API status
-- **Center panel**: Markdown workspace (textarea + pre sync-scroll with syntax highlighting)
+**Frontend:** Single-page React app served as a static asset by Pages. Three-column layout:
+- **Left panel**: Mic recording, audio upload (drag-drop), device selector, API status, BYOK settings
+- **Center panel**: Markdown workspace (textarea + synced highlight), auto-saved to KV
 - **Right panel**: LLM chat with model selector
 
-**Backend:** Local Node.js server that:
-- Proxies Volcengine ASR and OpenRouter LLM calls (API keys never exposed to browser)
-- Serves uploaded audio files at temp localhost URLs for the file ASR API
-- Handles workspace auto-save to `.md` file on disk
-- Reads `config.json` for all configuration
+**Backend (Pages Functions):** Each `/api/*` route is a Function that:
+- Proxies OpenRouter calls so the server-side API key is never exposed to the browser
+- Supports BYOK — a per-request `X-OpenRouter-Api-Key` header overrides the server key
+- Persists the workspace markdown in Cloudflare KV (`RECORDER_KV`)
+- Reads configuration from environment variables / `wrangler.toml` `[vars]`
 
-**Data flow:** Audio → Backend → Volcengine ASR → transcription text → Workspace. User prompt → Backend → OpenRouter LLM (streaming) → chat panel → appended to workspace.
+**Data flow:** Audio → `/api/transcribe` → OpenRouter (audio model) → transcription text → workspace. User prompt → `/api/chat` → OpenRouter (SSE streaming) → chat panel → appended to workspace.
 
-## External APIs
+## API Routes
 
-1. **Volcengine ASR v3 Bigmodel** — File recognition (`/api/v3/auc/bigmodel/submit` + `/query`) and streaming recognition (`wss://openspeech.bytedance.com/api/v3/sauc/bigmodel`). Auth: `X-Api-App-Key` + `X-Api-Access-Key`.
-2. **OpenRouter API** — OpenAI-compatible `/chat/completions` with SSE streaming. Auth: Bearer token.
+| Route | File | Backed by |
+| --- | --- | --- |
+| `GET /api/config` | `functions/api/config.js` | env vars |
+| `GET /api/health` | `functions/api/health.js` | OpenRouter `/key`, KV check |
+| `GET/POST /api/workspace` | `functions/api/workspace.js` | KV `workspace.md` |
+| `POST /api/transcribe` | `functions/api/transcribe.js` | OpenRouter `chat/completions` |
+| `POST /api/chat` | `functions/api/chat.js` | OpenRouter streaming `chat/completions` |
 
 ## Configuration
 
-All config in `config.json` at project root. No settings UI. Contains Volcengine credentials, OpenRouter credentials + URL, and the LLM model list.
+Configured through Cloudflare environment, not a config file:
+
+- `OPENROUTER_API_KEY` — server-funded key (secret). Optional for BYOK-only deployments.
+- `OPENROUTER_API_URL` — defaults to `https://openrouter.ai/api/v1`
+- `STT_MODEL` — audio-capable OpenRouter model used for transcription
+- `MODELS_JSON` — JSON array of `{ id, label }` chat-model picker entries
+- `RECORDER_KV` — KV binding for workspace persistence
+
+Locally these come from `.dev.vars` and `wrangler.toml` `[vars]`; in production from secrets, `[vars]`, and dashboard bindings.
 
 ## Key Implementation Notes
 
-- File ASR is a submit-then-poll workflow: submit audio URL → poll every 2s → status `20000000` = done
-- Streaming ASR uses a custom binary WebSocket protocol (4-byte header + gzip payloads). The backend handles this complexity; the browser streams raw PCM to the backend via a simpler WebSocket.
-- Audio capture: 16000 Hz, PCM 16-bit mono, 200ms chunks
-- Auto-save: debounced 700ms, backend writes to `.md` file on disk
-- LLM never modifies existing workspace content — only appends after `---` divider with auto-generated heading
-- LLM streams tokens into chat panel; workspace append happens on completion
-- Errors from LLM display in chat panel; errors from ASR display in the left panel upload card
+- Functions use **only Workers-runtime APIs** (`fetch`, `Response`, `Headers`, `URL`, `btoa`, `request.formData()`, `TextDecoder`) — no Node built-ins, no `fs`, no Express/Multer.
+- Transcription: audio is read in-memory, base64-encoded, and sent to OpenRouter as an `input_audio` content part.
+- Chat streams via SSE — the Function returns the upstream OpenRouter `ReadableStream` body directly.
+- Workspace persistence requires `RECORDER_KV`. Without it, reads return the default workspace and saves return HTTP 503 (the UI shows "save failed").
+- LLM never modifies existing workspace content — only appends after a `---` divider.
+- Auto-save is debounced (~700ms) and POSTs the workspace markdown to KV.
+- Errors from chat display in the chat panel; errors from transcription display in the left upload card.
+
+## Known Issues / Follow-ups
+
+- Mic recording encodes `audio/webm;codecs=opus` but `public/index.html` sends `format: 'wav'` to `/api/transcribe`. OpenRouter `input_audio` generally expects `wav`/`mp3`, so mic transcription may need in-browser transcoding or a model that accepts webm. File uploads with correct extensions are unaffected.
