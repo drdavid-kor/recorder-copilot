@@ -223,7 +223,7 @@ function LeftPanel({ recording, onToggleRecord, recordTime, dragging, onDragOver
                 ? <><div style={{width:5,height:5,borderRadius:'50%',background:T.accent}}/><span style={{fontFamily:T.mono,fontSize:9,color:T.accent}}>{uploadFile.error}</span></>
                 : uploadFile.done
                   ? <><div style={{width:5,height:5,borderRadius:'50%',background:T.green}}/><span style={{fontFamily:T.mono,fontSize:9,color:T.green}}>transcribed</span></>
-                  : <><div style={{width:5,height:5,borderRadius:'50%',background:T.yellow,animation:'blink 1s infinite'}}/><span style={{fontFamily:T.mono,fontSize:9,color:T.yellow}}>processing…</span></>}
+                  : <><div style={{width:5,height:5,borderRadius:'50%',background:T.yellow,animation:'blink 1s infinite'}}/><span style={{fontFamily:T.mono,fontSize:9,color:T.yellow}}>{uploadFile.progress?.total ? `transcribing ${uploadFile.progress.done}/${uploadFile.progress.total} segments…` : 'processing…'}</span></>}
             </div>
           </div>
         )}
@@ -563,25 +563,28 @@ function SettingsModal({
 }
 
 /* ── Audio Utilities ────────────────────────────────── */
+// Long audio is split into fixed-length segments and transcribed in parallel,
+// so each request is a small, separate Pages Function invocation.
+const STT_TARGET_RATE     = 16000;          // downsample each segment to 16 kHz mono
+const SEGMENT_SECONDS     = 15 * 60;        // 15-minute segments
+const LONG_AUDIO_TRIGGER  = 20 * 60;        // audio longer than this is segmented
+const MAX_AUDIO_SECONDS   = 3 * 3600 + 600; // ~3h10m hard cap (browser-memory guard)
+const STT_CONCURRENCY     = 4;              // parallel transcription requests
+const STT_SEGMENT_RETRIES = 2;              // retries before a segment is marked failed
+
 function arrayBufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
   let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
   return btoa(binary);
 }
 
-// Convert any browser-recorded audio blob to WAV (PCM) via AudioContext
-async function blobToWavBase64(blob) {
-  const arrayBuf = await blob.arrayBuffer();
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const decoded = await audioCtx.decodeAudioData(arrayBuf);
-
-  // Take mono channel, use original sample rate
-  const samples = decoded.getChannelData(0);
-  const sampleRate = decoded.sampleRate;
+// Encode mono Float32 samples as a 16-bit PCM WAV, returned as base64.
+function encodeWavBase64(samples, sampleRate) {
   const numSamples = samples.length;
-
-  // Build WAV file
   const wavBuf = new ArrayBuffer(44 + numSamples * 2);
   const view = new DataView(wavBuf);
   const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
@@ -602,9 +605,129 @@ async function blobToWavBase64(blob) {
     const s = Math.max(-1, Math.min(1, samples[i]));
     view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
   }
-
-  audioCtx.close();
   return arrayBufferToBase64(wavBuf);
+}
+
+// Convert any browser-recorded audio blob to WAV (PCM) via AudioContext (mic short path).
+async function blobToWavBase64(blob) {
+  const arrayBuf = await blob.arrayBuffer();
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const decoded = await audioCtx.decodeAudioData(arrayBuf);
+  const base64 = encodeWavBase64(decoded.getChannelData(0), decoded.sampleRate);
+  audioCtx.close();
+  return base64;
+}
+
+// Decode a file/blob to one mono Float32 channel at STT_TARGET_RATE. Decoding
+// inside a 16 kHz context avoids materializing a native-rate PCM buffer for
+// multi-hour audio; we defensively resample if the browser ignores the rate.
+async function decodeTo16kMono(fileOrBlob) {
+  const arrayBuf = await fileOrBlob.arrayBuffer();
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  let ctx;
+  try { ctx = new Ctor({ sampleRate: STT_TARGET_RATE }); }
+  catch { ctx = new Ctor(); }
+
+  let decoded;
+  try { decoded = await ctx.decodeAudioData(arrayBuf); }
+  finally { ctx.close(); }
+
+  if (decoded.sampleRate === STT_TARGET_RATE) return decoded.getChannelData(0);
+
+  // Browser ignored the requested rate — resample to 16 kHz mono offline.
+  const frames = Math.ceil(decoded.duration * STT_TARGET_RATE);
+  const offline = new OfflineAudioContext(1, frames, STT_TARGET_RATE);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offline.destination);
+  src.start();
+  const rendered = await offline.startRendering();
+  return rendered.getChannelData(0);
+}
+
+// Read an audio file's duration (seconds) from metadata without decoding it.
+function probeDurationSeconds(fileOrBlob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(fileOrBlob);
+    const el = document.createElement('audio');
+    el.preload = 'metadata';
+    const finish = (value) => { URL.revokeObjectURL(url); resolve(value); };
+    el.onloadedmetadata = () => finish(Number.isFinite(el.duration) ? el.duration : 0);
+    el.onerror = () => finish(0);
+    el.src = url;
+  });
+}
+
+// Split a sample count into ordered fixed-length segment ranges.
+function sliceSegments(totalSamples, rate) {
+  const per = SEGMENT_SECONDS * rate;
+  const segs = [];
+  for (let start = 0, index = 0; start < totalSamples; start += per, index++) {
+    const end = Math.min(start + per, totalSamples);
+    segs.push({ index, sampleStart: start, sampleEnd: end, startSec: start / rate, endSec: end / rate });
+  }
+  return segs;
+}
+
+function fmtTimecode(seconds) {
+  const t = Math.max(0, Math.round(seconds));
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(t / 3600))}:${pad(Math.floor((t % 3600) / 60))}:${pad(t % 60)}`;
+}
+
+// Run `worker` over items with a fixed concurrency cap; results stay in item order.
+async function runPool(items, worker, concurrency) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function lane() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, lane));
+  return results;
+}
+
+// Decode long audio, transcribe each segment in parallel, and reassemble the
+// transcript with timecode subheadings. Returns the combined Markdown body.
+async function transcribeLongAudio(fileOrBlob, { sttModel, apiHeaders, onProgress }) {
+  const samples = await decodeTo16kMono(fileOrBlob);
+  const segments = sliceSegments(samples.length, STT_TARGET_RATE);
+  let done = 0;
+  if (onProgress) onProgress(0, segments.length);
+
+  const parts = await runPool(segments, async (seg) => {
+    const range = `${fmtTimecode(seg.startSec)}–${fmtTimecode(seg.endSec)}`;
+    let part;
+    let lastErr = '';
+    for (let attempt = 0; attempt <= STT_SEGMENT_RETRIES && part === undefined; attempt++) {
+      try {
+        const audio = encodeWavBase64(samples.subarray(seg.sampleStart, seg.sampleEnd), STT_TARGET_RATE);
+        const res = await fetch('/api/transcribe', {
+          method: 'POST',
+          headers: apiHeaders({
+            'Content-Type': 'application/json',
+            ...(sttModel ? { 'X-STT-Model': sttModel } : {}),
+          }),
+          body: JSON.stringify({ audio, format: 'wav', filename: `segment-${seg.index + 1}.wav` }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        part = `## ${range}\n\n${(data.text || '').trim()}\n`;
+      } catch (err) {
+        lastErr = err.message;
+      }
+    }
+    if (part === undefined) {
+      part = `## ${range}\n\n> ⚠️ Transcription failed for this segment (${range}): ${lastErr}.\n`;
+    }
+    done += 1;
+    if (onProgress) onProgress(done, segments.length);
+    return part;
+  }, STT_CONCURRENCY);
+
+  return parts.join('\n');
 }
 
 /* ── App ────────────────────────────────────────────── */
@@ -783,20 +906,33 @@ function App() {
     setUploadFile({name: file.name, done: false, error: null});
 
     try {
-      const formData = new FormData();
-      formData.append('audio', file);
+      const dur = await probeDurationSeconds(file);
+      if (dur > MAX_AUDIO_SECONDS) {
+        throw new Error(`Audio too long to process in-browser (${fmtTimecode(dur)} > ${fmtTimecode(MAX_AUDIO_SECONDS)})`);
+      }
 
-      const res = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: apiHeaders(sttModel ? { 'X-STT-Model': sttModel } : {}),
-        body: formData,
-      });
-      const data = await readJson(res);
-      if (!res.ok) throw new Error(data.error || `Transcription failed (HTTP ${res.status})`);
+      if (dur > LONG_AUDIO_TRIGGER) {
+        const body = await transcribeLongAudio(file, {
+          sttModel,
+          apiHeaders,
+          onProgress: (done, total) => setUploadFile({ name: file.name, done: false, error: null, progress: { done, total } }),
+        });
+        handleContentChange(contentRef.current + `\n\n---\n\n# Transcription — ${file.name}\n\n${body}\n`);
+      } else {
+        const formData = new FormData();
+        formData.append('audio', file);
 
-      if (data.text) {
-        const appended = `\n\n---\n\n# Transcription — ${file.name}\n\n${data.text}\n`;
-        handleContentChange(contentRef.current + appended);
+        const res = await fetch('/api/transcribe', {
+          method: 'POST',
+          headers: apiHeaders(sttModel ? { 'X-STT-Model': sttModel } : {}),
+          body: formData,
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || `Transcription failed (HTTP ${res.status})`);
+
+        if (data.text) {
+          handleContentChange(contentRef.current + `\n\n---\n\n# Transcription — ${file.name}\n\n${data.text}\n`);
+        }
       }
       setUploadFile({name: file.name, done: true, error: null});
     } catch (err) {
@@ -838,6 +974,7 @@ function App() {
 
       recordCountRef.current += 1;
       const count = recordCountRef.current;
+      let startedAt = 0;
 
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
@@ -845,38 +982,46 @@ function App() {
 
         if (!chunks.length) return;
 
-        // Show transcribing state
-        setUploadFile({ name: `Recording ${count}`, done: false, error: null });
+        const label = `Recording ${count}`;
+        setUploadFile({ name: label, done: false, error: null });
 
         try {
           const blob = new Blob(chunks, { type: mimeType });
-          const base64 = await blobToWavBase64(blob);
+          // MediaRecorder webm blobs often report Infinity duration, so use the
+          // elapsed record time to decide whether to segment.
+          const elapsedSec = (Date.now() - startedAt) / 1000;
 
-          const res = await fetch('/api/transcribe', {
-            method: 'POST',
-            headers: apiHeaders({
-              'Content-Type': 'application/json',
-              ...(sttModel ? { 'X-STT-Model': sttModel } : {}),
-            }),
-            body: JSON.stringify({
-              audio: base64,
-              format: 'wav',
-              filename: `Recording ${count}`,
-            }),
-          });
-          const data = await readJson(res);
-          if (!res.ok) throw new Error(data.error || `Transcription failed (HTTP ${res.status})`);
+          if (elapsedSec > LONG_AUDIO_TRIGGER) {
+            const body = await transcribeLongAudio(blob, {
+              sttModel,
+              apiHeaders,
+              onProgress: (done, total) => setUploadFile({ name: label, done: false, error: null, progress: { done, total } }),
+            });
+            handleContentChange(contentRef.current + `\n\n---\n\n# Transcription — ${label}\n\n${body}\n`);
+          } else {
+            const base64 = await blobToWavBase64(blob);
+            const res = await fetch('/api/transcribe', {
+              method: 'POST',
+              headers: apiHeaders({
+                'Content-Type': 'application/json',
+                ...(sttModel ? { 'X-STT-Model': sttModel } : {}),
+              }),
+              body: JSON.stringify({ audio: base64, format: 'wav', filename: label }),
+            });
+            const data = await readJson(res);
+            if (!res.ok) throw new Error(data.error || `Transcription failed (HTTP ${res.status})`);
 
-          if (data.text) {
-            const appended = `\n\n---\n\n# Transcription — Recording ${count}\n\n${data.text}\n`;
-            handleContentChange(contentRef.current + appended);
+            if (data.text) {
+              handleContentChange(contentRef.current + `\n\n---\n\n# Transcription — ${label}\n\n${data.text}\n`);
+            }
           }
-          setUploadFile({ name: `Recording ${count}`, done: true, error: null });
+          setUploadFile({ name: label, done: true, error: null });
         } catch (err) {
-          setUploadFile({ name: `Recording ${count}`, done: false, error: err.message });
+          setUploadFile({ name: label, done: false, error: err.message });
         }
       };
 
+      startedAt = Date.now();
       recorder.start(1000); // collect in 1s chunks
       setRecording(true);
       setRecordTime(0);
