@@ -75,13 +75,16 @@ Locally these come from `.dev.vars` and `wrangler.toml` `[vars]`; in production 
 ## Key Implementation Notes
 
 - Functions use **only Workers-runtime APIs** (`fetch`, `Response`, `Headers`, `URL`, `btoa`, `request.formData()`, `TextDecoder`) — no Node built-ins, no `fs`, no Express/Multer.
-- Transcription: audio is read in-memory, base64-encoded, and sent to OpenRouter as an `input_audio` content part.
+- Transcription: audio is read in-memory, base64-encoded, and sent to OpenRouter as an `input_audio` content part. Mic recordings are decoded and re-encoded to real WAV PCM in the browser (`blobToWavBase64`) before upload, so `format: 'wav'` is accurate.
 - Chat streams via SSE — the Function returns the upstream OpenRouter `ReadableStream` body directly.
 - Workspace persistence requires `RECORDER_KV`. Without it, reads return the default workspace and saves return HTTP 503 (the UI shows "save failed").
 - LLM never modifies existing workspace content — only appends after a `---` divider.
 - Auto-save is debounced (~700ms) and POSTs the workspace markdown to KV.
 - Errors from chat display in the chat panel; errors from transcription display in the left upload card.
 
-## Known Issues / Follow-ups
+## Client-side model overrides
 
-- Mic recording encodes `audio/webm;codecs=opus` but `public/index.html` sends `format: 'wav'` to `/api/transcribe`. OpenRouter `input_audio` generally expects `wav`/`mp3`, so mic transcription may need in-browser transcoding or a model that accepts webm. File uploads with correct extensions are unaffected.
+The **Settings** dialog lets the user pick or type a custom STT model and LLM model (in addition to BYOK). Both are stored in `localStorage` only:
+
+- **STT model** (`project-recorder.stt-model`) — sent to `/api/transcribe` as the `X-STT-Model` header; the Function prefers it over the server `STT_MODEL`, and falls back to the server default when the header is absent/blank.
+- **LLM model** (`project-recorder.llm-model`) — sent in the `/api/chat` body as `model`; also drives the chat panel's model picker (which shows a typed id as a "custom" option). Blank resets to the first server-configured model.

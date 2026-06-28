@@ -51,7 +51,8 @@ export async function onRequestPost({ request, env }) {
     }
 
     const config = getConfig(env, request);
-    const text = await transcribeAudio(base64Data, format, config.sttModel, env, request);
+    const sttModel = (request.headers.get('X-STT-Model') || '').trim() || config.sttModel;
+    const text = await transcribeAudio(base64Data, format, sttModel, env, request);
 
     return json({ text, filename });
   } catch (err) {

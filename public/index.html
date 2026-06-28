@@ -42,48 +42,10 @@
   .send-btn:hover:not(:disabled) { filter: brightness(1.12); }
   .upload-zone:hover { border-color: #8b949e !important; background: rgba(255,255,255,0.03) !important; }
   .chat-entry { animation: slide-in 0.2s ease; }
-
-  #pr-byok-static {
-    position: fixed;
-    top: 6px;
-    right: 10px;
-    z-index: 50;
-    border: 1px solid #30363d;
-    border-radius: 999px;
-    background: #1c2128;
-    color: #e6edf3;
-    font: 600 10px/1 "JetBrains Mono", monospace;
-    letter-spacing: 0.08em;
-    padding: 6px 10px;
-    cursor: pointer;
-  }
-  #pr-byok-static:hover { border-color: #8b949e; color: #fff; }
 </style>
 </head>
 <body>
 <div id="root"></div>
-<button id="pr-byok-static" type="button" title="Bring your own OpenRouter API key">BYOK</button>
-<script>
-  (function () {
-    const storageKey = 'project-recorder.openrouter-api-key';
-    window.addEventListener('DOMContentLoaded', function () {
-      const btn = document.getElementById('pr-byok-static');
-      if (!btn) return;
-      btn.addEventListener('click', function () {
-        const event = new CustomEvent('project-recorder-open-settings', { cancelable: true });
-        window.dispatchEvent(event);
-        if (event.defaultPrevented) return;
-
-        const current = localStorage.getItem(storageKey) || '';
-        const next = prompt('OpenRouter API key (leave blank to clear):', current);
-        if (next == null) return;
-        const trimmed = next.trim();
-        if (trimmed) localStorage.setItem(storageKey, trimmed);
-        else localStorage.removeItem(storageKey);
-      });
-    });
-  })();
-</script>
 <script type="text/babel">
 
 /* ── Design Tokens ─────────────────────────────────── */
@@ -391,6 +353,9 @@ function ChatPanel({ history, onSend, isProcessing, model, onModelChange, models
         <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text,flex:1}}>LLM</span>
         <select value={model} onChange={e => onModelChange(e.target.value)}
           style={{background:T.surface2,border:`1px solid ${T.border}`,color:T.muted,fontFamily:T.mono,fontSize:10,padding:'2px 5px',borderRadius:4,outline:'none',cursor:'pointer',maxWidth:148}}>
+          {model && !models.some(m => m.id === model) && (
+            <option value={model}>{model} (custom)</option>
+          )}
           {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
         </select>
       </div>
@@ -492,7 +457,17 @@ function Titlebar({ onOpenSettings, byokActive }) {
 }
 
 /* ── Settings ───────────────────────────────────────── */
-function SettingsModal({ byokDraft, byokActive, onDraftChange, onSave, onClear, onClose }) {
+function SettingsModal({
+  byokDraft, byokActive, onByokChange,
+  sttDraft, onSttChange, serverSttModel,
+  llmDraft, onLlmChange, models,
+  onSave, onClear, onClose,
+}) {
+  const inputStyle = {width:'100%',background:T.surface2,border:`1px solid ${T.border}`,borderRadius:5,color:T.text,fontFamily:T.mono,fontSize:12,padding:'9px 10px',outline:'none'};
+  const onFieldFocus = e => { e.target.style.borderColor = T.dim; };
+  const onFieldBlur  = e => { e.target.style.borderColor = T.border; };
+  const fieldLabel = {fontFamily:T.mono,fontSize:10,color:T.muted,marginBottom:5};
+
   return (
     <div
       role="dialog"
@@ -500,8 +475,8 @@ function SettingsModal({ byokDraft, byokActive, onDraftChange, onSave, onClear, 
       aria-label="Settings"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
       style={{position:'fixed',inset:0,zIndex:10,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',padding:18}}>
-      <div style={{width:'min(460px, 100%)',background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,boxShadow:'0 24px 80px rgba(0,0,0,0.45)',overflow:'hidden'}}>
-        <div style={{height:42,borderBottom:`1px solid ${T.border}`,display:'flex',alignItems:'center',padding:'0 14px',gap:10}}>
+      <div style={{width:'min(460px, 100%)',maxHeight:'calc(100vh - 36px)',overflowY:'auto',background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,boxShadow:'0 24px 80px rgba(0,0,0,0.45)'}}>
+        <div style={{height:42,borderBottom:`1px solid ${T.border}`,display:'flex',alignItems:'center',padding:'0 14px',gap:10,position:'sticky',top:0,background:T.surface,zIndex:1}}>
           <span style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text,flex:1}}>Settings</span>
           <button className="ghost-btn" onClick={onClose}
             style={{fontFamily:T.mono,fontSize:10,color:T.muted,background:'none',border:`1px solid ${T.border}`,borderRadius:4,padding:'2px 8px',cursor:'pointer'}}>
@@ -509,7 +484,7 @@ function SettingsModal({ byokDraft, byokActive, onDraftChange, onSave, onClear, 
           </button>
         </div>
 
-        <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
+        <div style={{padding:16,display:'flex',flexDirection:'column',gap:16}}>
           <div>
             <SectionLabel>Bring Your Own Key</SectionLabel>
             <div style={{fontFamily:T.mono,fontSize:11,color:T.muted,lineHeight:1.65,marginBottom:9}}>
@@ -518,14 +493,54 @@ function SettingsModal({ byokDraft, byokActive, onDraftChange, onSave, onClear, 
             <input
               type="password"
               value={byokDraft}
-              onChange={e => onDraftChange(e.target.value)}
+              onChange={e => onByokChange(e.target.value)}
               placeholder="sk-or-v1-..."
               autoComplete="off"
               spellCheck={false}
-              style={{width:'100%',background:T.surface2,border:`1px solid ${T.border}`,borderRadius:5,color:T.text,fontFamily:T.mono,fontSize:12,padding:'9px 10px',outline:'none'}}
-              onFocus={e => e.target.style.borderColor = T.dim}
-              onBlur={e => e.target.style.borderColor = T.border}
+              style={inputStyle}
+              onFocus={onFieldFocus}
+              onBlur={onFieldBlur}
             />
+          </div>
+
+          <div>
+            <SectionLabel>Models</SectionLabel>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.muted,lineHeight:1.65,marginBottom:11}}>
+              Pick a suggestion or type any OpenRouter model id. Saved in this browser only.
+            </div>
+
+            <div style={fieldLabel}>STT model — voice recognition</div>
+            <input
+              list="pr-stt-models"
+              value={sttDraft}
+              onChange={e => onSttChange(e.target.value)}
+              placeholder={serverSttModel ? `${serverSttModel} (server default)` : 'server default'}
+              autoComplete="off"
+              spellCheck={false}
+              style={inputStyle}
+              onFocus={onFieldFocus}
+              onBlur={onFieldBlur}
+            />
+            <datalist id="pr-stt-models">
+              {serverSttModel && <option value={serverSttModel}/>}
+            </datalist>
+            <div style={{fontFamily:T.mono,fontSize:9,color:T.dim,marginTop:5}}>Leave blank to use the server default.</div>
+
+            <div style={{...fieldLabel,marginTop:13}}>LLM model — chat</div>
+            <input
+              list="pr-llm-models"
+              value={llmDraft}
+              onChange={e => onLlmChange(e.target.value)}
+              placeholder="e.g. deepseek/deepseek-v3.2"
+              autoComplete="off"
+              spellCheck={false}
+              style={inputStyle}
+              onFocus={onFieldFocus}
+              onBlur={onFieldBlur}
+            />
+            <datalist id="pr-llm-models">
+              {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </datalist>
           </div>
 
           <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -534,7 +549,7 @@ function SettingsModal({ byokDraft, byokActive, onDraftChange, onSave, onClear, 
             </div>
             <button className="ghost-btn" onClick={onClear}
               style={{fontFamily:T.mono,fontSize:10,color:T.muted,background:'none',border:`1px solid ${T.border}`,borderRadius:4,padding:'5px 10px',cursor:'pointer'}}>
-              Clear
+              Clear Key
             </button>
             <button className="send-btn" onClick={onSave}
               style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:'#fff',background:T.accent,border:'none',borderRadius:4,padding:'6px 13px',cursor:'pointer'}}>
@@ -595,21 +610,26 @@ async function blobToWavBase64(blob) {
 /* ── App ────────────────────────────────────────────── */
 const DEFAULT_CONTENT = '# Workspace\n\nStart **recording** or upload an audio file to begin transcription.\n\nYour transcribed text will appear here in real-time.\n';
 const BYOK_STORAGE_KEY = 'project-recorder.openrouter-api-key';
+const STT_MODEL_STORAGE_KEY = 'project-recorder.stt-model';
+const LLM_MODEL_STORAGE_KEY = 'project-recorder.llm-model';
 
-function readStoredByokKey() {
+function readStored(key) {
   try {
-    return localStorage.getItem(BYOK_STORAGE_KEY) || '';
+    return localStorage.getItem(key) || '';
   } catch {
     return '';
   }
 }
 
-function writeStoredByokKey(value) {
+function writeStored(key, value) {
   try {
-    if (value) localStorage.setItem(BYOK_STORAGE_KEY, value);
-    else localStorage.removeItem(BYOK_STORAGE_KEY);
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
   } catch {}
 }
+
+const readStoredByokKey = () => readStored(BYOK_STORAGE_KEY);
+const writeStoredByokKey = (value) => writeStored(BYOK_STORAGE_KEY, value);
 
 function App() {
   const [content, setContent]          = React.useState(DEFAULT_CONTENT);
@@ -620,7 +640,9 @@ function App() {
   const [chatHistory, setChatHistory]  = React.useState([]);
   const [isProcessing, setIsProcessing]= React.useState(false);
   const [models, setModels]            = React.useState([]);
-  const [model, setModel]              = React.useState('');
+  const [serverSttModel, setServerSttModel] = React.useState('');
+  const [model, setModel]              = React.useState(() => readStored(LLM_MODEL_STORAGE_KEY));
+  const [sttModel, setSttModel]        = React.useState(() => readStored(STT_MODEL_STORAGE_KEY));
   const [uploadFile, setUploadFile]    = React.useState(null);
   const [selectedMic, setSelectedMic]  = React.useState('default');
   const [micDevices, setMicDevices]    = React.useState([{id:'default', label:'Default Input'}]);
@@ -629,6 +651,8 @@ function App() {
   const [settingsOpen, setSettingsOpen]= React.useState(false);
   const [byokKey, setByokKey]          = React.useState(readStoredByokKey);
   const [byokDraft, setByokDraft]      = React.useState(byokKey);
+  const [sttDraft, setSttDraft]        = React.useState(sttModel);
+  const [llmDraft, setLlmDraft]        = React.useState(model);
 
   const timerRef       = React.useRef();
   const saveTimer      = React.useRef();
@@ -645,11 +669,17 @@ function App() {
     return next;
   }, [byokKey]);
 
+  const updateModel = React.useCallback((id) => {
+    setModel(id);
+    writeStored(LLM_MODEL_STORAGE_KEY, id);
+  }, []);
+
   // --- Load config, workspace on mount ---
   React.useEffect(() => {
     fetch('/api/config').then(r => r.json()).then(data => {
       setModels(data.models || []);
-      if (data.models?.length) setModel(data.models[0].id);
+      setServerSttModel(data.sttModel || '');
+      setModel(m => m || data.models?.[0]?.id || '');
     }).catch(() => {});
 
     fetch('/api/workspace').then(r => r.text()).then(text => {
@@ -681,24 +711,27 @@ function App() {
   }, [apiHeaders]);
 
   React.useEffect(() => {
-    if (settingsOpen) setByokDraft(byokKey);
-  }, [settingsOpen, byokKey]);
+    if (settingsOpen) {
+      setByokDraft(byokKey);
+      setSttDraft(sttModel);
+      setLlmDraft(model || '');
+    }
+  }, [settingsOpen, byokKey, sttModel, model]);
 
-  React.useEffect(() => {
-    const openSettings = (event) => {
-      event.preventDefault();
-      setSettingsOpen(true);
-    };
-    window.addEventListener('project-recorder-open-settings', openSettings);
-    return () => window.removeEventListener('project-recorder-open-settings', openSettings);
-  }, []);
-
-  const saveByokSettings = React.useCallback(() => {
+  const saveSettings = React.useCallback(() => {
     const key = byokDraft.trim();
     writeStoredByokKey(key);
     setByokKey(key);
+
+    const stt = sttDraft.trim();
+    writeStored(STT_MODEL_STORAGE_KEY, stt);
+    setSttModel(stt);
+
+    const llm = llmDraft.trim() || models[0]?.id || '';
+    updateModel(llm);
+
     setSettingsOpen(false);
-  }, [byokDraft]);
+  }, [byokDraft, sttDraft, llmDraft, models, updateModel]);
 
   const clearByokSettings = React.useCallback(() => {
     writeStoredByokKey('');
@@ -737,7 +770,11 @@ function App() {
       const formData = new FormData();
       formData.append('audio', file);
 
-      const res = await fetch('/api/transcribe', { method: 'POST', headers: apiHeaders(), body: formData });
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: apiHeaders(sttModel ? { 'X-STT-Model': sttModel } : {}),
+        body: formData,
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Transcription failed');
 
@@ -749,7 +786,7 @@ function App() {
     } catch (err) {
       setUploadFile({name: file.name, done: false, error: err.message});
     }
-  }, [apiHeaders, handleContentChange]);
+  }, [apiHeaders, handleContentChange, sttModel]);
 
   // --- Mic recording: capture with MediaRecorder, transcribe on stop ---
   const toggleRecord = React.useCallback(async () => {
@@ -801,7 +838,10 @@ function App() {
 
           const res = await fetch('/api/transcribe', {
             method: 'POST',
-            headers: apiHeaders({ 'Content-Type': 'application/json' }),
+            headers: apiHeaders({
+              'Content-Type': 'application/json',
+              ...(sttModel ? { 'X-STT-Model': sttModel } : {}),
+            }),
             body: JSON.stringify({
               audio: base64,
               format: 'wav',
@@ -829,7 +869,7 @@ function App() {
     } catch (err) {
       console.error('Mic access failed:', err);
     }
-  }, [recording, selectedMic, apiHeaders, handleContentChange]);
+  }, [recording, selectedMic, apiHeaders, handleContentChange, sttModel]);
 
   React.useEffect(() => () => clearInterval(timerRef.current), []);
 
@@ -925,8 +965,14 @@ function App() {
         <SettingsModal
           byokDraft={byokDraft}
           byokActive={!!byokKey}
-          onDraftChange={setByokDraft}
-          onSave={saveByokSettings}
+          onByokChange={setByokDraft}
+          sttDraft={sttDraft}
+          onSttChange={setSttDraft}
+          serverSttModel={serverSttModel}
+          llmDraft={llmDraft}
+          onLlmChange={setLlmDraft}
+          models={models}
+          onSave={saveSettings}
           onClear={clearByokSettings}
           onClose={() => setSettingsOpen(false)}
         />
@@ -949,7 +995,7 @@ function App() {
         <ChatPanel
           history={chatHistory}    onSend={handleSend}
           isProcessing={isProcessing}
-          model={model}            onModelChange={setModel}
+          model={model}            onModelChange={updateModel}
           models={models}
         />
       </div>
