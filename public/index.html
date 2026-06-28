@@ -631,6 +631,22 @@ function writeStored(key, value) {
 const readStoredByokKey = () => readStored(BYOK_STORAGE_KEY);
 const writeStoredByokKey = (value) => writeStored(BYOK_STORAGE_KEY, value);
 
+// Parse a response as JSON, but fail with a legible message when the body is
+// HTML/empty (e.g. an /api route that didn't reach a Pages Function and fell
+// through to a 404 / error / SPA page).
+async function readJson(res) {
+  const body = await res.text();
+  try {
+    return body ? JSON.parse(body) : {};
+  } catch {
+    const looksHtml = /^\s*</.test(body);
+    const detail = looksHtml
+      ? 'the endpoint returned HTML, not JSON — the /api Pages Function may not be deployed or active for this route'
+      : 'the endpoint returned a non-JSON response';
+    throw new Error(`Server error (HTTP ${res.status}): ${detail}.`);
+  }
+}
+
 function App() {
   const [content, setContent]          = React.useState(DEFAULT_CONTENT);
   const [recording, setRecording]      = React.useState(false);
@@ -775,8 +791,8 @@ function App() {
         headers: apiHeaders(sttModel ? { 'X-STT-Model': sttModel } : {}),
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Transcription failed');
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.error || `Transcription failed (HTTP ${res.status})`);
 
       if (data.text) {
         const appended = `\n\n---\n\n# Transcription — ${file.name}\n\n${data.text}\n`;
@@ -848,8 +864,8 @@ function App() {
               filename: `Recording ${count}`,
             }),
           });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Transcription failed');
+          const data = await readJson(res);
+          if (!res.ok) throw new Error(data.error || `Transcription failed (HTTP ${res.status})`);
 
           if (data.text) {
             const appended = `\n\n---\n\n# Transcription — Recording ${count}\n\n${data.text}\n`;
