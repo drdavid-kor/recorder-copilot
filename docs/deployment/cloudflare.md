@@ -43,6 +43,7 @@ Example `MODELS_JSON`:
 
 ```json
 [
+  { "id": "deepseek/deepseek-v4-flash", "label": "DeepSeek V4 Flash" },
   { "id": "deepseek/deepseek-v3.2", "label": "DeepSeek V3.2" },
   { "id": "minimax/minimax-m2.7", "label": "MiniMax M2.7" },
   { "id": "x-ai/grok-4.1-fast", "label": "Grok 4.1 Fast" }

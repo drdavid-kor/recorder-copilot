@@ -331,7 +331,7 @@ function Workspace({ content, onChange, saving }) {
 }
 
 /* ── Chat Panel ─────────────────────────────────────── */
-function ChatPanel({ history, onSend, isProcessing, model, onModelChange, models }) {
+function ChatPanel({ history, onSend, isProcessing, model }) {
   const [input, setInput] = React.useState('');
   const listRef = React.useRef();
 
@@ -351,13 +351,10 @@ function ChatPanel({ history, onSend, isProcessing, model, onModelChange, models
     <div style={{width:256,display:'flex',flexDirection:'column',borderLeft:`1px solid ${T.border}`,background:T.surface,flexShrink:0}}>
       <div style={{height:36,borderBottom:`1px solid ${T.border}`,display:'flex',alignItems:'center',padding:'0 10px',gap:8}}>
         <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text,flex:1}}>LLM</span>
-        <select value={model} onChange={e => onModelChange(e.target.value)}
-          style={{background:T.surface2,border:`1px solid ${T.border}`,color:T.muted,fontFamily:T.mono,fontSize:10,padding:'2px 5px',borderRadius:4,outline:'none',cursor:'pointer',maxWidth:148}}>
-          {model && !models.some(m => m.id === model) && (
-            <option value={model}>{model} (custom)</option>
-          )}
-          {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-        </select>
+        <span title={model ? `${model} — change in Settings` : 'Set a model in Settings'}
+          style={{fontFamily:T.mono,fontSize:10,color:T.muted,maxWidth:160,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+          {model || 'no model set'}
+        </span>
       </div>
 
       <div ref={listRef} style={{flex:1,overflowY:'auto',padding:'12px 10px',display:'flex',flexDirection:'column',gap:0}}>
@@ -1209,8 +1206,7 @@ function App() {
         <ChatPanel
           history={chatHistory}    onSend={handleSend}
           isProcessing={isProcessing}
-          model={model}            onModelChange={updateModel}
-          models={models}
+          model={model}
         />
       </div>
     </div>
