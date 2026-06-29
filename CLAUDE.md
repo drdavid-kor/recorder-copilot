@@ -82,9 +82,10 @@ Locally these come from `.dev.vars` and `wrangler.toml` `[vars]`; in production 
 - Auto-save is debounced (~700ms) and POSTs the workspace markdown to KV.
 - Errors from chat display in the chat panel; errors from transcription display in the left upload card.
 
-## Client-side model overrides
+## Client-side settings (localStorage)
 
-The **Settings** dialog lets the user pick or type a custom STT model and LLM model (in addition to BYOK). Both are stored in `localStorage` only:
+The **Settings** dialog lets the user override defaults (in addition to BYOK). All are stored in `localStorage` only:
 
 - **STT model** (`project-recorder.stt-model`) — sent to `/api/transcribe` as the `X-STT-Model` header; the Function prefers it over the server `STT_MODEL`, and falls back to the server default when the header is absent/blank.
 - **LLM model** (`project-recorder.llm-model`) — sent in the `/api/chat` body as `model`; also drives the chat panel's model picker (which shows a typed id as a "custom" option). Blank resets to the first server-configured model.
+- **Segment length** (`project-recorder.segment-minutes`) — minutes per segment for long-audio splitting (default 15, clamped 1–30). Audio longer than this is split into segments transcribed in parallel; lowering it shrinks each request's payload (useful when long files hit 502/503 from OpenRouter/Cloudflare). The split threshold equals the segment length, so every request stays bounded by the chosen size.

@@ -56,6 +56,6 @@ export async function onRequestPost({ request, env }) {
 
     return json({ text, filename });
   } catch (err) {
-    return json({ error: err.message }, { status: 500 });
+    return json({ error: err.message }, { status: err.status || 500 });
   }
 }

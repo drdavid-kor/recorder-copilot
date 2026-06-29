@@ -46,7 +46,9 @@ export async function transcribeAudio(base64Data, format, model, env, request) {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Transcription failed (${res.status}): ${text}`);
+    const err = new Error(`Transcription failed (${res.status}): ${text}`);
+    err.status = res.status;
+    throw err;
   }
 
   const data = await res.json();
