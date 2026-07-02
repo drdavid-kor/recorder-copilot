@@ -73,11 +73,20 @@ function esc(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 function inlineHL(s) {
-  return s
-    .replace(/\*\*\*(.+?)\*\*\*/g, `<b><em style="color:#fff">$1</em></b>`)
-    .replace(/\*\*(.+?)\*\*/g,     `<strong style="color:#fff;font-weight:600">$1</strong>`)
-    .replace(/\*([^\*\n]+?)\*/g,   `<em style="color:#cdd9e5">$1</em>`)
-    .replace(/\`([^\`\n]+?)\`/g,   `<span style="background:#1c2128;color:${T.green};padding:0 3px;border-radius:3px">$1</span>`);
+  // `s` is already HTML-escaped. Keep every marker character (rendered dim) so
+  // the overlay text stays character-identical to the textarea — stripping them
+  // would make the two wrap at different points and the caret drift off the text.
+  // No padding/border here either: it must not change any glyph's advance width.
+  const dim = t => `<span style="color:${T.dim}">${t}</span>`;
+  return s.replace(
+    /(\*\*\*)([^*]+?)(\*\*\*)|(\*\*)([^*]+?)(\*\*)|(\*)([^*\n]+?)(\*)|(\`)([^\`\n]+?)(\`)/g,
+    (m, b3o,b3i,b3c, b2o,b2i,b2c, i1o,i1i,i1c, cdo,cdi,cdc) => {
+      if (b3o) return dim(b3o) + `<b><em style="color:#fff">${b3i}</em></b>` + dim(b3c);
+      if (b2o) return dim(b2o) + `<strong style="color:#fff;font-weight:600">${b2i}</strong>` + dim(b2c);
+      if (i1o) return dim(i1o) + `<em style="color:#cdd9e5">${i1i}</em>` + dim(i1c);
+      return dim(cdo) + `<span style="background:#1c2128;color:${T.green};border-radius:3px">${cdi}</span>` + dim(cdc);
+    }
+  );
 }
 function highlightMd(text) {
   return text.split('\n').map(raw => {
@@ -91,7 +100,7 @@ function highlightMd(text) {
     if (/^---+$/.test(raw.trim()))
       return `<span style="color:${T.dim}">${line}</span>`;
     if (raw.startsWith('> '))
-      return `<span style="color:${T.muted};border-left:2px solid ${T.dim};padding-left:6px">${inlineHL(line.slice(2))}</span>`;
+      return `<span style="color:${T.dim}">&gt; </span><span style="color:${T.muted}">${inlineHL(esc(raw.slice(2)))}</span>`;
     const lm = raw.match(/^(\s*)([-*+]|\d+\.) (.*)$/);
     if (lm)
       return `${esc(lm[1])}<span style="color:${T.dim}">${esc(lm[2])} </span><span style="color:${T.text}">${inlineHL(esc(lm[3]))}</span>`;
